@@ -1,0 +1,3 @@
+AllowStartupConection: Y;
+empresa: 2;
+userPass: $2a$11$4VcdkZim4BPxBx8HuvrP0u4OQz51KLq5lbDpdw695TH8ddfVMJokC
