@@ -299,8 +299,8 @@ namespace ExtraService_Notification
                            {
                                IdEmpresa = ReadFileOptionConfig("empresa: ").Replace("empresa: ", "").Replace(";", ""),
                                Username = "Remoto",
-                               Password = ReadFileOptionConfig("userPass: ").Replace("userPass: ", ""),
-                               passwordEncriptado = true
+                               Password = ReadFileOptionConfig("userPass: ").Replace("userPass: ", "")
+                               ,passwordEncriptado = true
                            })
                            , Encoding.UTF8
                            , "application/json"
