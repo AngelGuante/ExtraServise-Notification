@@ -24,11 +24,8 @@ namespace ExtraService_Notification
         private static NotifyIcon _icon { get; } = new NotifyIcon();
         public static ContextMenu menu { get; } = new ContextMenu();
         private static IntPtr _procces { get; } = Process.GetCurrentProcess().MainWindowHandle;
-#if DEBUG
-        private static string _serverUrl { get; } = "https://localhost:44392/API/";
-#else
+        //private static string _serverUrl { get; } = "https://localhost:44392/API/";
         private static string _serverUrl { get; } = "https://moniextra.com/API/";
-#endif
 
         [DllImport("user32.dll")]
         static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -42,8 +39,8 @@ namespace ExtraService_Notification
                 #region MENU
                 menu.MenuItems.Add("Iniciar/Detener Servicio", IniciarDetenerServicio);
                 menu.MenuItems.Add("Habilitar equipo como servidor", HabilitarComoServidor);
-                menu.MenuItems.Add("Ocultar icono", CerrarAplicacion);
                 menu.MenuItems.Add("-");
+                menu.MenuItems.Add("Cerrar conexión", CerrarAplicacion);
                 menu.MenuItems.Add("Resetear conexión", CloseApp);
                 _icon.ContextMenu = menu;
                 #endregion
@@ -52,8 +49,9 @@ namespace ExtraService_Notification
                 var sc = new ServiceController("ExtraService");
                 _icon.Visible = true;
                 if (sc.Status != ServiceControllerStatus.Running)
-                {
                     sc.Start();
+                if (sc.Status == ServiceControllerStatus.Running)
+                {
                     _icon.Icon = new System.Drawing.Icon($@"{_appPath}{_iconEnabled}");
                     BalloonTip("Servicio En Ejecución.", ToolTipIcon.None);
                 }
@@ -299,8 +297,8 @@ namespace ExtraService_Notification
                            {
                                IdEmpresa = ReadFileOptionConfig("empresa: ").Replace("empresa: ", "").Replace(";", ""),
                                Username = "Remoto",
-                               Password = ReadFileOptionConfig("userPass: ").Replace("userPass: ", "")
-                               ,passwordEncriptado = true
+                               Password = ReadFileOptionConfig("userPass: ").Replace("userPass: ", ""),
+                               passwordEncriptado = true
                            })
                            , Encoding.UTF8
                            , "application/json"
@@ -313,6 +311,7 @@ namespace ExtraService_Notification
                 res = await response.Content.ReadAsStringAsync();
                 if (res == "true")
                 {
+                    _icon.Visible = true;
                     BalloonTip("Este servidor ahora esta online para que los clientes puedan usarlo para obtener la data.", ToolTipIcon.None);
                     return true;
                 }

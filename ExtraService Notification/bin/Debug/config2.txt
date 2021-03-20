@@ -1,3 +1,0 @@
-AllowStartupConection: Y;
-empresa: 10032;
-userPass: $2a$11$1QnbFCyBCXDOPYUMQ3j67./LhSJmkmwdQw8jVJlwbF3D.cghc.J0a
