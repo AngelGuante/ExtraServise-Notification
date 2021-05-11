@@ -4,11 +4,14 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.NetworkInformation;
 using System.Runtime.InteropServices;
 using System.ServiceProcess;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -16,6 +19,8 @@ namespace ExtraService_Notification
 {
     class Program
     {
+        private static bool _conexionPerdida { get; set; } = false;
+        private static string _ipPublicaEnMemoria { get; set; } = string.Empty;
         private static string _MAC { get; } = NetworkInterface.GetAllNetworkInterfaces().FirstOrDefault(x => x.OperationalStatus == OperationalStatus.Up).GetPhysicalAddress().ToString();
         private static string _appPath { get; } = Application.ExecutablePath.ToString().Replace(@"\ExtraService Notification.exe", @"\");
         private static string _iconEnabled { get; } = @"\favicon.ico";
@@ -24,8 +29,10 @@ namespace ExtraService_Notification
         private static NotifyIcon _icon { get; } = new NotifyIcon();
         public static ContextMenu menu { get; } = new ContextMenu();
         private static IntPtr _procces { get; } = Process.GetCurrentProcess().MainWindowHandle;
-        //private static string _serverUrl { get; } = "https://localhost:44392/API/";
-        private static string _serverUrl { get; } = "https://moniextra.com/API/";
+        private static string _serverUrl { get; } = "https://localhost:44392/API/";
+        private static string _websocketUrl { get; } = "https://localhost:5001/api/SendDataClient/";
+        //private static string _serverUrl { get; } = "https://moniextra.com/API/";
+        //private static string _websocketUrl { get; } = "https://monicawebsocketserver.azurewebsites.net/api/SendDataClient/";
 
         [DllImport("user32.dll")]
         static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -33,7 +40,6 @@ namespace ExtraService_Notification
         static void Main()
         {
             ShowWindow(_procces, 0);
-
             try
             {
                 #region MENU
@@ -65,20 +71,25 @@ namespace ExtraService_Notification
                 if (!File.Exists(_pathConfigFile))
                     using (var fs = File.Create(_pathConfigFile))
                     {
-                        byte[] text = new UTF8Encoding(true).GetBytes("AllowStartupConection: N;\nempresa: --;\nuserPass: --\n");
+                        byte[] text = new UTF8Encoding(true).GetBytes($"AllowStartupConection: N;\nempresa: --;\nipPublica: --;\nuserPass: --\n");
                         fs.Write(text, 0, text.Length);
                     }
                 else
                 {
                     if (ReadFileOptionConfig("AllowStartupConection: ") == "AllowStartupConection: Y;")
-                    {
-                        Task.Run(async () =>
-                        {
-                            await AbrirConexionRemota();
-                        });
                         menu.MenuItems[1].Text = "Deshabilitar equipo como servidor";
-                    }
                 }
+
+                Task.Run(async () =>
+                {
+                    await AbrirConexionRemota();
+                    while (true)
+                    {
+                        await Task.Delay(10000);
+                        await ComprobarIpPublica();
+                    }
+                });
+
                 Application.Run();
             }
             catch (Exception)
@@ -235,7 +246,7 @@ namespace ExtraService_Notification
         private async static void CerrarAplicacion(object sender, EventArgs e)
         {
             if (
-                MessageBox.Show("El Servicio ExtraService seguirá en ejecición pero se quitará el icono de la barra de tareas.",
+                MessageBox.Show("El Servicio ExtraServicese va a detener.",
                 "Cerrar Tray Icon?",
                 MessageBoxButtons.YesNo) == DialogResult.Yes)
             {
@@ -262,10 +273,8 @@ namespace ExtraService_Notification
                     BalloonTip("Servicio Iniciado.", ToolTipIcon.None);
                 }
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine(ex);
-                Console.ReadLine();
                 BalloonTip("Algo ha ocurrido, intentelo más tarde.", ToolTipIcon.Error);
             }
         }
@@ -287,7 +296,15 @@ namespace ExtraService_Notification
                     if (sd.StartsWith(configOption))
                         break;
             }
-            return sd;
+            if (sd != null)
+                return sd.Replace(configOption, "").Replace(";", "");
+            else
+            {
+                var sw = File.AppendText(_pathConfigFile);
+                sw.Write($"\n{configOption}--;");
+                sw.Flush();
+                return "--";
+            }
         }
 
         private async static Task<bool> AbrirConexionRemota()
@@ -309,6 +326,7 @@ namespace ExtraService_Notification
             using (var response = await client.PostAsync($"{_serverUrl}CONEXIONREMOTA/ESTABLECERSERVIDOR", content))
             {
                 res = await response.Content.ReadAsStringAsync();
+
                 if (res == "true")
                 {
                     _icon.Visible = true;
@@ -317,6 +335,7 @@ namespace ExtraService_Notification
                 }
             }
             BalloonTip(res.Replace("\"", ""), ToolTipIcon.Error);
+
             return false;
         }
 
@@ -342,11 +361,135 @@ namespace ExtraService_Notification
                 if (res == "true")
                 {
                     _icon.Visible = false;
+
+                    try
+                    {
+                        var sc = new ServiceController("ExtraService");
+                        if (sc.Status == ServiceControllerStatus.Running)
+                        {
+                            sc.Stop();
+                            await Task.Delay(20);
+                        }
+                    }
+                    catch (Exception)
+                    {}
+
                     return true;
                 }
             }
             BalloonTip(res.Replace("\"", ""), ToolTipIcon.Error);
             return false;
+        }
+
+        private async static Task ComprobarIpPublica()
+        {
+            try
+            {
+                #region OBTENER LA IP PUBLICA
+                string address = string.Empty;
+
+                try
+                {
+                    WebRequest request = WebRequest.Create("http://checkip.dyndns.org/");
+                    using (WebResponse response = request.GetResponse())
+                    using (StreamReader stream = new StreamReader(response.GetResponseStream()))
+                        address = stream.ReadToEnd();
+                    if (_conexionPerdida)
+                    {
+                        _conexionPerdida = false;
+                        var sc = new ServiceController("ExtraService");
+                        if (sc.Status == ServiceControllerStatus.Stopped)
+                            sc.Start();
+                    }
+
+                }
+                catch (Exception)
+                {
+                    if (!_conexionPerdida)
+                    {
+                        _conexionPerdida = true;
+                        var sc = new ServiceController("ExtraService");
+                        if (sc.Status == ServiceControllerStatus.Running)
+                        {
+                            sc.Stop();
+                            sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromMilliseconds(20000));
+                        }
+                    }
+                }
+                #endregion
+
+                if (!_conexionPerdida && address != string.Empty)
+                {
+                    #region VALIDAR LA IP PUBLICA CON LA ALMACENADA EN LOCAL
+                    var rg = new Regex("([0-9]{1,3}[.]?){1,4}");
+                    var ipPublica = rg.Matches(address)[0].ToString();
+
+                    if (ipPublica.Split(new char[] { '.' }, StringSplitOptions.None).Length == 4)
+                    {
+                        if (_ipPublicaEnMemoria == string.Empty)
+                            _ipPublicaEnMemoria = ReadFileOptionConfig("ipPublica: ");
+
+                        if (ipPublica != _ipPublicaEnMemoria)
+                        {
+                            var content = new StringContent(
+                                      JsonConvert.SerializeObject(new
+                                      {
+                                          IdEmpresa = ReadFileOptionConfig("empresa: ").Replace("empresa: ", "").Replace(";", ""),
+                                          Username = "Remoto",
+                                          Password = ReadFileOptionConfig("userPass: ").Replace("userPass: ", ""),
+                                          passwordEncriptado = true
+                                      })
+                                      , Encoding.UTF8
+                                      , "application/json"
+                                      );
+
+                            var sc = new ServiceController("ExtraService");
+                            if (sc.Status == ServiceControllerStatus.Running)
+                            {
+                                sc.Stop();
+                                sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromMilliseconds(20000));
+                                sc.Start();
+                            }
+                            else
+                                sc.Start();
+
+                            using (var client = new HttpClient())
+                            using (await client.PostAsync($"{_serverUrl}CONEXIONREMOTA/CAMBIARIP", content)) { }
+
+                            var newData = File.ReadAllText(_pathConfigFile);
+                            newData = newData.Replace($"ipPublica: {_ipPublicaEnMemoria};", $"ipPublica: {ipPublica};");
+                            File.WriteAllText(_pathConfigFile, newData);
+
+                            _ipPublicaEnMemoria = ipPublica;
+                        }
+                    }
+                    #endregion
+
+                    #region Validar la IP en el servidor de websocket
+                    WebRequest request = WebRequest.Create($"{_websocketUrl}GetClients");
+                    using (WebResponse response = request.GetResponse())
+                    using (StreamReader stream = new StreamReader(response.GetResponseStream()))
+                    {
+                        var IPS = stream.ReadToEnd();
+                        if (IPS.IndexOf(_ipPublicaEnMemoria) == -1)
+                        {
+                            var sc = new ServiceController("ExtraService");
+                            if (sc.Status == ServiceControllerStatus.Running)
+                            {
+                                sc.Stop();
+                                sc.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromMilliseconds(20000));
+                                Thread.Sleep(5000);
+                                sc.Start();
+                            }
+                            else
+                                sc.Start();
+                        }
+                    }
+                    #endregion
+                }
+            }
+            catch (Exception)
+            {}
         }
 
         static async void CloseApp(object sender, EventArgs e)
@@ -356,6 +499,19 @@ namespace ExtraService_Notification
                 BalloonTip("Débe habilitar el equipo como servidor para poder realizar esta acción.", ToolTipIcon.Error);
                 return;
             }
+
+            try
+            {
+                var sc = new ServiceController("ExtraService");
+                if (sc.Status == ServiceControllerStatus.Running)
+                {
+                    sc.Stop();
+                    await Task.Delay(20);
+                }
+            }
+            catch (Exception)
+            {}
+
             await CerrarConexionRemota();
             await AbrirConexionRemota();
         }
