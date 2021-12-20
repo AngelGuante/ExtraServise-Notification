@@ -1,4 +1,0 @@
-AllowStartupConection: Y;
-empresa: 10038;
-userPass: $2a$11$BCK5GPgg47lGCA4cQpWVXu3F.ghmoa97gYuQIyi8.0UgybxJBnFJS
-ipPublica: 181.36.127.187;

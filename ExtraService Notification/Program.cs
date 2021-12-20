@@ -29,10 +29,10 @@ namespace ExtraService_Notification
         private static NotifyIcon _icon { get; } = new NotifyIcon();
         public static ContextMenu menu { get; } = new ContextMenu();
         private static IntPtr _procces { get; } = Process.GetCurrentProcess().MainWindowHandle;
-        private static string _serverUrl { get; } = "https://localhost:44392/API/";
-        private static string _websocketUrl { get; } = "https://localhost:5001/api/SendDataClient/";
-        //private static string _serverUrl { get; } = "https://moniextra.com/API/";
-        //private static string _websocketUrl { get; } = "https://monicawebsocketserver.azurewebsites.net/api/SendDataClient/";
+        //private static string _serverUrl { get; } = "https://localhost:44392/API/";
+        //private static string _websocketUrl { get; } = "https://localhost:5001/api/SendDataClient/";
+        private static string _serverUrl { get; } = "https://moniextra.com/API/";
+        private static string _websocketUrl { get; } = "https://monicawebsocketserver.azurewebsites.net/api/SendDataClient/";
 
         [DllImport("user32.dll")]
         static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
@@ -138,7 +138,7 @@ namespace ExtraService_Notification
             #endregion
 
             #region VALIDAR LOS CREDENCIALES DE LA EMPRESA
-            if (ReadFileOptionConfig("userPass: ") == "userPass: --" && ReadFileOptionConfig("empresa: ") == "empresa: --;")
+            if (ReadFileOptionConfig("userPass: ") == "--" && ReadFileOptionConfig("empresa: ") == "--")
             {
                 password = string.Empty;
                 string empresa;
@@ -309,7 +309,9 @@ namespace ExtraService_Notification
 
         private async static Task<bool> AbrirConexionRemota()
         {
-            var content = new StringContent(
+            if (ReadFileOptionConfig("userPass: ") != "--" && ReadFileOptionConfig("empresa: ") != "--")
+            {
+                var content = new StringContent(
                            JsonConvert.SerializeObject(new
                            {
                                IdEmpresa = ReadFileOptionConfig("empresa: ").Replace("empresa: ", "").Replace(";", ""),
@@ -321,21 +323,21 @@ namespace ExtraService_Notification
                            , "application/json"
                            );
 
-            var res = string.Empty;
-            using (var client = new HttpClient())
-            using (var response = await client.PostAsync($"{_serverUrl}CONEXIONREMOTA/ESTABLECERSERVIDOR", content))
-            {
-                res = await response.Content.ReadAsStringAsync();
-
-                if (res == "true")
+                var res = string.Empty;
+                using (var client = new HttpClient())
+                using (var response = await client.PostAsync($"{_serverUrl}CONEXIONREMOTA/ESTABLECERSERVIDOR", content))
                 {
-                    _icon.Visible = true;
-                    BalloonTip("Este servidor ahora esta online para que los clientes puedan usarlo para obtener la data.", ToolTipIcon.None);
-                    return true;
-                }
-            }
-            BalloonTip(res.Replace("\"", ""), ToolTipIcon.Error);
+                    res = await response.Content.ReadAsStringAsync();
 
+                    if (res == "true")
+                    {
+                        _icon.Visible = true;
+                        BalloonTip("Este servidor ahora esta online para que los clientes puedan usarlo para obtener la data.", ToolTipIcon.None);
+                        return true;
+                    }
+                }
+                BalloonTip(res.Replace("\"", ""), ToolTipIcon.Error);
+            }
             return false;
         }
 
@@ -372,7 +374,7 @@ namespace ExtraService_Notification
                         }
                     }
                     catch (Exception)
-                    {}
+                    { }
 
                     return true;
                 }
@@ -489,7 +491,7 @@ namespace ExtraService_Notification
                 }
             }
             catch (Exception)
-            {}
+            { }
         }
 
         static async void CloseApp(object sender, EventArgs e)
@@ -510,7 +512,7 @@ namespace ExtraService_Notification
                 }
             }
             catch (Exception)
-            {}
+            { }
 
             await CerrarConexionRemota();
             await AbrirConexionRemota();
